@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>AI Analyze</title>
+    <style>
+      body { font-family: -apple-system, BlinkMacSystemFont, Segoe UI, Roboto, Helvetica, Arial, sans-serif; margin: 12px; min-width: 260px; }
+      .row { margin-top: 8px; }
+      button { padding: 6px 10px; border-radius: 6px; border: 1px solid rgba(0,0,0,0.15); background: white; cursor: pointer; }
+      button:hover { background: #f3f4f6; }
+      .hint { color: #6b7280; font-size: 12px; margin-top: 8px; }
+      .ok { color: #059669; }
+      .warn { color: #b91c1c; }
+    </style>
+  </head>
+  <body>
+    <div><strong>AI Analyze Selection</strong></div>
+    <div class="row" id="status">Checking API key…</div>
+    <div class="row">
+      <button id="openOptions">Open Options</button>
+    </div>
+    <div class="hint">Shortcut: Alt+Shift+A</div>
+    <script src="popup.js"></script>
+  </body>
+</html>
