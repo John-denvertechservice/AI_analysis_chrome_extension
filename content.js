@@ -1,10 +1,211 @@
 // Content script: captures selection and renders overlay UI
 
 const OVERLAY_ID = "ai-analyze-overlay";
+let isAnalysisInProgress = false;
+let lastAnalyzedText = "";
+let lastAnalyzedImage = null;
+const WORD_LIMIT = 50;
+const SUPPORTED_FILE_MIME_TYPES = [
+  "image/png",
+  "image/jpeg",
+  "image/webp",
+  "image/gif",
+  "image/heic",
+  "image/heif"
+];
+
+function isSupportedFileType(mimeType) {
+  if (!mimeType) return false;
+  if (mimeType.startsWith("image/")) return true;
+  return SUPPORTED_FILE_MIME_TYPES.includes(mimeType);
+}
+
+function classifyFileType(mimeType) {
+  if (mimeType && mimeType.startsWith("image/")) return "image";
+  return "unknown";
+}
+
+function readFileAsDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = () => reject(reader.error || new Error("Failed to read file"));
+    reader.readAsDataURL(file);
+  });
+}
+
+function decodeDataUrl(dataUrl) {
+  if (!dataUrl || typeof dataUrl !== "string") return null;
+  const parts = dataUrl.split(",");
+  return parts.length > 1 ? parts[1] : null;
+}
+
+function inferMimeTypeFromSrc(src) {
+  if (!src || typeof src !== "string") return "";
+  if (!src.startsWith("data:")) return "";
+  const match = src.match(/^data:([^;]+);/);
+  return match ? match[1] : "";
+}
+
+function formatFileSize(bytes) {
+  if (!bytes || Number.isNaN(bytes)) return "";
+  if (bytes < 1024) return `${bytes} B`;
+  const kb = bytes / 1024;
+  if (kb < 1024) return `${kb.toFixed(1)} KB`;
+  const mb = kb / 1024;
+  return `${mb.toFixed(1)} MB`;
+}
+
+function setupFileDropZone(element, onFileSelected) {
+  if (!element) return;
+
+  element.addEventListener("dragover", (event) => {
+    event.preventDefault();
+    element.classList.add("dragover");
+  });
+
+  element.addEventListener("dragleave", () => {
+    element.classList.remove("dragover");
+  });
+
+  element.addEventListener("drop", (event) => {
+    event.preventDefault();
+    element.classList.remove("dragover");
+    const files = event.dataTransfer?.files;
+    if (files && files.length && onFileSelected) {
+      onFileSelected(files[0]);
+    }
+  });
+}
+
+function createHiddenFileInput(onFileSelected) {
+  const input = document.createElement("input");
+  input.type = "file";
+  input.accept = "image/*";
+  input.style.display = "none";
+  input.addEventListener("change", () => {
+    const file = input.files && input.files[0];
+    if (file && onFileSelected) {
+      onFileSelected(file);
+    }
+    input.value = "";
+  });
+  return input;
+}
+
+function sendFileForAnalysis(filePayload) {
+  return new Promise((resolve, reject) => {
+    chrome.runtime.sendMessage(
+      {
+        type: "ANALYZE_FILE",
+        fileData: filePayload
+      },
+      (response) => {
+        if (chrome.runtime.lastError) {
+          reject(new Error(chrome.runtime.lastError.message));
+          return;
+        }
+        resolve(response);
+      }
+    );
+  });
+}
+
+async function analyzeUserFile(file) {
+  if (!file) return;
+
+  const mimeType = file.type || "";
+  if (!isSupportedFileType(mimeType)) {
+    renderOverlayResult("Unsupported file type. Please upload an image.", true, null);
+    return;
+  }
+
+  const category = classifyFileType(mimeType);
+  let dataUrl;
+  try {
+    dataUrl = await readFileAsDataUrl(file);
+  } catch (error) {
+    renderOverlayResult(`Failed to read file: ${error.message || error}`, true, null);
+    return;
+  }
+
+  const base64 = decodeDataUrl(dataUrl);
+  if (!base64) {
+    renderOverlayResult("Unable to process file contents.", true, null);
+    return;
+  }
+
+  isAnalysisInProgress = true;
+  renderOverlayLoading(null, category === "image" ? "image" : "file");
+
+  try {
+    const response = await sendFileForAnalysis({
+      base64,
+      mimeType: mimeType || "image/png",
+      name: file.name || `uploaded-${Date.now()}`,
+      size: file.size || 0
+    });
+
+    if (!response || !response.success) {
+      const errorMessage = response?.error || "Analysis failed.";
+      isAnalysisInProgress = false;
+      renderImageAnalysis(
+        {
+          src: category === "image" ? dataUrl : "",
+          mimeType,
+          name: file.name || "Uploaded file",
+          base64
+        },
+        errorMessage,
+        true
+      );
+      return;
+    }
+
+    isAnalysisInProgress = false;
+    renderImageAnalysis(
+      {
+        src: category === "image" ? dataUrl : "",
+        mimeType,
+        name: file.name || "Uploaded file",
+        base64
+      },
+      response.content,
+      false,
+      response.conversationHistory || [],
+      { originalCategory: category }
+    );
+  } catch (error) {
+    isAnalysisInProgress = false;
+    renderImageAnalysis(
+      {
+        src: category === "image" ? dataUrl : "",
+        mimeType,
+        name: file.name || "Uploaded file",
+        base64
+      },
+      error.message || "Unexpected error during analysis.",
+      true
+    );
+  }
+}
 
 function getSelectionWithRect() {
   const selection = window.getSelection();
-  if (!selection || selection.rangeCount === 0) return { text: "", rect: null };
+  if (!selection || selection.rangeCount === 0) {
+    // Check if there's a selected image
+    const selectedImage = getSelectedImage();
+    if (selectedImage) {
+      return { 
+        text: "", 
+        rect: null, 
+        image: selectedImage,
+        type: "image"
+      };
+    }
+    return { text: "", rect: null, type: "text" };
+  }
+  
   const range = selection.getRangeAt(0);
   const text = selection.toString();
   let rect = null;
@@ -12,7 +213,45 @@ function getSelectionWithRect() {
     const r = range.getBoundingClientRect();
     rect = { top: r.top + window.scrollY, left: r.left + window.scrollX, bottom: r.bottom + window.scrollY, right: r.right + window.scrollX };
   } catch (_) {}
-  return { text, rect };
+  
+  // Check if selection contains an image
+  const selectedImage = getSelectedImage();
+  if (selectedImage) {
+    return { 
+      text, 
+      rect, 
+      image: selectedImage,
+      type: "image"
+    };
+  }
+  
+  return { text, rect, type: "text" };
+}
+
+function getSelectedImage() {
+  const selection = window.getSelection();
+  if (!selection || selection.rangeCount === 0) return null;
+  
+  const range = selection.getRangeAt(0);
+  const container = range.commonAncestorContainer;
+  
+  // Check if the selection is within an image
+  let element = container.nodeType === Node.ELEMENT_NODE ? container : container.parentElement;
+  
+  while (element && element !== document.body) {
+    if (element.tagName === 'IMG') {
+      return {
+        src: element.src,
+        alt: element.alt || '',
+        width: element.naturalWidth || element.width,
+        height: element.naturalHeight || element.height,
+        element: element
+      };
+    }
+    element = element.parentElement;
+  }
+  
+  return null;
 }
 
 function ensureOverlayContainer() {
@@ -26,18 +265,138 @@ function ensureOverlayContainer() {
   return el;
 }
 
+function getOverlayState(container) {
+  const target = container || document.getElementById(OVERLAY_ID);
+  if (!target) return null;
+  if (!target.__aiAnalyzeState) {
+    target.__aiAnalyzeState = {
+      conversationHistory: [],
+      baseConversationLength: 0,
+      originalContent: "",
+      originalCategory: null,
+      attachmentData: null
+    };
+  }
+  return target.__aiAnalyzeState;
+}
+
+function resetOverlayState(container) {
+  const state = getOverlayState(container || document.getElementById(OVERLAY_ID));
+  if (!state) return null;
+  state.conversationHistory = [];
+  state.baseConversationLength = 0;
+  state.originalContent = "";
+  state.originalCategory = null;
+  state.attachmentData = null;
+  return state;
+}
+
+function normalizeConversationHistory(history) {
+  if (!Array.isArray(history)) return [];
+  return history
+    .map((msg) => {
+      if (!msg || typeof msg !== "object") return null;
+      const role = typeof msg.role === "string" ? msg.role.trim().toLowerCase() : "";
+      const content = typeof msg.content === "string" ? msg.content : "";
+      if (!content || (role !== "user" && role !== "assistant")) return null;
+      return { role, content };
+    })
+    .filter(Boolean);
+}
+
+function buildInitialConversationHistory(providedHistory, assistantContent, userContent) {
+  const normalized = normalizeConversationHistory(providedHistory);
+  if (normalized.length > 0) {
+    return normalized;
+  }
+
+  const history = [];
+  const userText = typeof userContent === "string" ? userContent.trim() : "";
+  const assistantText = typeof assistantContent === "string" ? assistantContent.trim() : "";
+
+  if (userText) {
+    history.push({ role: "user", content: userText });
+  }
+
+  if (assistantText) {
+    history.push({ role: "assistant", content: assistantText });
+  }
+
+  return history;
+}
+
+function describeAttachmentForHistory(attachment, originalCategory) {
+  if (!attachment) return "";
+  const details = [];
+  if (attachment.name) details.push(attachment.name);
+  else if (attachment.alt) details.push(attachment.alt);
+  else if (attachment.mimeType) details.push(attachment.mimeType);
+  else if (attachment.src && typeof attachment.src === "string") {
+    try {
+      const url = new URL(attachment.src);
+      const lastSegment = url.pathname.split("/").filter(Boolean).pop();
+      if (lastSegment) {
+        details.push(lastSegment);
+      } else {
+        details.push(url.hostname);
+      }
+    } catch (_) {
+      details.push("uploaded file");
+    }
+  } else {
+    details.push("uploaded file");
+  }
+
+  const descriptor = details.join(" ").trim() || "uploaded file";
+  const category = (originalCategory || attachment.mimeType || "").toLowerCase();
+  if (category.includes("image")) {
+    return `Analyze image: ${descriptor}`;
+  }
+  return `Analyze file: ${descriptor}`;
+}
+
+function renderConversationMessages(conversationDiv, history, skipCount) {
+  if (!conversationDiv) return;
+  const safeHistory = Array.isArray(history) ? history : [];
+  const startIndex = Math.max(0, skipCount || 0);
+  const displayMessages = safeHistory.slice(startIndex);
+
+  conversationDiv.innerHTML = "";
+
+  displayMessages.forEach((msg) => {
+    if (!msg || typeof msg.content !== "string") return;
+    if (msg.role === "user") {
+      const messageDiv = document.createElement("div");
+      messageDiv.className = `ai-analyze-message ${msg.role}`;
+      messageDiv.textContent = msg.content;
+      conversationDiv.appendChild(messageDiv);
+    } else if (msg.role === "assistant") {
+      const responseDiv = document.createElement("div");
+      responseDiv.className = "ai-analyze-follow-up-response";
+      responseDiv.innerHTML = formatAIResponse(msg.content);
+      conversationDiv.appendChild(responseDiv);
+    }
+  });
+
+  if (conversationDiv.parentElement) {
+    conversationDiv.parentElement.scrollTop = conversationDiv.parentElement.scrollHeight;
+  }
+}
+
 function isOverlayVisible() {
   const el = document.getElementById(OVERLAY_ID);
-  return el && el.style.display !== 'none' && el.children.length > 0;
+  return el && el.style.display !== 'none' && el.children.length > 0 && el.dataset.closing !== "true";
 }
 
 function closeOverlay() {
   const el = document.getElementById(OVERLAY_ID);
   if (el) {
+    isAnalysisInProgress = false;
+    el.dataset.closing = "true";
     // Add fade out animation
     el.style.opacity = "0";
     el.style.transition = "opacity 0.5s ease-out";
-    
+
     // Remove element after animation completes
     setTimeout(() => {
       el.remove();
@@ -66,7 +425,7 @@ function getCurrentDateTime() {
   return now.toLocaleDateString('en-US', options);
 }
 
-function renderOverlayLoading(rect) {
+function renderOverlayLoading(rect, type = "text") {
   const container = ensureOverlayContainer();
   container.innerHTML = "";
   const box = document.createElement("div");
@@ -76,21 +435,34 @@ function renderOverlayLoading(rect) {
   
   // Create header with title and timestamp
   const headerContent = document.createElement("div");
-  headerContent.style.display = "flex";
-  headerContent.style.justifyContent = "space-between";
-  headerContent.style.alignItems = "center";
-  headerContent.style.width = "100%";
+  headerContent.className = "ai-analyze-header-content";
   
   const title = document.createElement("span");
-  title.textContent = "Analyzing selection…";
+  if (type === "image") {
+    title.textContent = "Analyzing image…";
+  } else if (type === "file") {
+    title.textContent = "Analyzing file…";
+  } else {
+    title.textContent = "Analyzing";
+  }
   
   const timestamp = document.createElement("span");
   timestamp.className = "ai-analyze-timestamp";
   timestamp.textContent = getCurrentDateTime();
   
+  // Add minimize button
+  const minimizeBtn = document.createElement("button");
+  minimizeBtn.className = "ai-analyze-minimize-btn";
+  minimizeBtn.innerHTML = "▼";
+  minimizeBtn.title = "Minimize";
+  
   headerContent.appendChild(title);
   headerContent.appendChild(timestamp);
+  headerContent.appendChild(minimizeBtn);
   header.appendChild(headerContent);
+  
+  // Add minimize/maximize functionality
+  addMinimizeMaximizeFunctionality(box, minimizeBtn);
   
   const body = document.createElement("div");
   body.className = "ai-analyze-body";
@@ -115,7 +487,10 @@ function renderOverlayLoading(rect) {
   actions.className = "ai-analyze-actions";
   const closeBtn = document.createElement("button");
   closeBtn.textContent = "Close";
-  closeBtn.addEventListener("click", () => container.remove());
+  closeBtn.addEventListener("click", () => {
+    isAnalysisInProgress = false;
+    container.remove();
+  });
   actions.appendChild(closeBtn);
   box.appendChild(header);
   box.appendChild(body);
@@ -124,163 +499,101 @@ function renderOverlayLoading(rect) {
   positionOverlay(container);
 }
 
-function loadPlotly() {
-  return new Promise((resolve, reject) => {
-    if (window.Plotly) {
-      resolve();
-      return;
+
+
+function detectFinalAnswer(content) {
+  if (!content) return null;
+  
+  // Patterns to detect final answers
+  const finalAnswerPatterns = [
+    /Final Answer[:\s]*([^\n]+)/i,
+    /Answer[:\s]*([^\n]+)/i,
+    /Solution[:\s]*([^\n]+)/i,
+    /Result[:\s]*([^\n]+)/i,
+    /Conclusion[:\s]*([^\n]+)/i,
+    /Therefore[,\s]*([^\n]+)/i,
+    /So[,\s]*([^\n]+)/i,
+    /Thus[,\s]*([^\n]+)/i,
+    /In conclusion[,\s]*([^\n]+)/i,
+    /The answer is[:\s]*([^\n]+)/i,
+    /The solution is[:\s]*([^\n]+)/i,
+    /The result is[:\s]*([^\n]+)/i,
+    /x\s*=\s*([^\n]+)/i,
+    /y\s*=\s*([^\n]+)/i,
+    /z\s*=\s*([^\n]+)/i,
+    /[a-zA-Z]\s*=\s*([^\n]+)/i
+  ];
+  
+  for (const pattern of finalAnswerPatterns) {
+    const match = content.match(pattern);
+    if (match && match[1]) {
+      const answer = match[1].trim();
+      // Only return if the answer is substantial (more than just a word or two)
+      if (answer.length > 3 && !answer.match(/^(is|are|was|were|the|a|an)$/i)) {
+        return {
+          text: answer,
+          pattern: pattern.source,
+          fullMatch: match[0]
+        };
+      }
     }
-    
-    // Check if script is already being loaded
-    if (document.querySelector('script[src*="plotly"]')) {
-      // Wait for existing script to load
-      const checkInterval = setInterval(() => {
-        if (window.Plotly) {
-          clearInterval(checkInterval);
-          resolve();
-        }
-      }, 100);
-      
-      // Timeout after 10 seconds
-      setTimeout(() => {
-        clearInterval(checkInterval);
-        reject(new Error('Plotly loading timeout'));
-      }, 10000);
-      return;
-    }
-    
-    const script = document.createElement('script');
-    script.src = 'https://cdn.plot.ly/plotly-latest.min.js';
-    script.crossOrigin = 'anonymous';
-    script.onload = () => {
-      console.log('Plotly loaded successfully');
-      resolve();
-    };
-    script.onerror = (error) => {
-      console.error('Failed to load Plotly:', error);
-      reject(new Error('Failed to load Plotly library'));
-    };
-    
-    // Add to head
-    document.head.appendChild(script);
-  });
+  }
+  
+  return null;
 }
 
-function renderChart(plotlyCode) {
-  return new Promise(async (resolve) => {
-    try {
-      await loadPlotly();
-      
-      // Create a container for the chart
-      const chartContainer = document.createElement('div');
-      chartContainer.style.width = '100%';
-      chartContainer.style.height = '400px';
-      chartContainer.style.margin = '10px 0';
-      chartContainer.style.border = '1px solid rgba(255,255,255,0.2)';
-      chartContainer.style.borderRadius = '4px';
-      chartContainer.style.background = '#1a1a1a';
-      
-      // Execute the plotly code
-      try {
-        // Create a safe execution context
-        const func = new Function('Plotly', 'numpy', plotlyCode);
-        const numpy = {
-          linspace: (start, stop, num) => {
-            const step = (stop - start) / (num - 1);
-            return Array.from({length: num}, (_, i) => start + step * i);
-          },
-          array: (arr) => arr,
-          sin: Math.sin,
-          cos: Math.cos,
-          exp: Math.exp,
-          log: Math.log,
-          sqrt: Math.sqrt,
-          pi: Math.PI,
-          e: Math.E,
-          arange: (start, stop, step = 1) => {
-            const result = [];
-            for (let i = start; i < stop; i += step) {
-              result.push(i);
-            }
-            return result;
-          }
-        };
-        
-        // Execute the function and wait for it to complete
-        const result = await func(Plotly, numpy);
-        
-        // If the function returns a promise, wait for it
-        if (result && typeof result.then === 'function') {
-          await result;
-        }
-        
-        resolve(chartContainer);
-      } catch (error) {
-        console.error('Chart execution error:', error);
-        chartContainer.innerHTML = `<div style="padding: 20px; text-align: center; color: #ff6b6b; font-family: Inter, sans-serif;">Chart Error: ${error.message}</div>`;
-        resolve(chartContainer);
-      }
-    } catch (error) {
-      console.error('Plotly loading error:', error);
-      const errorDiv = document.createElement('div');
-      errorDiv.innerHTML = `<div style="padding: 20px; text-align: center; color: #ff6b6b; font-family: Inter, sans-serif;">Failed to load chart library: ${error.message}</div>`;
-      resolve(errorDiv);
-    }
-  });
+function createFinalAnswerDisplay(answerText) {
+  return `
+    <div class="ai-analyze-final-answer">
+      <div class="ai-analyze-final-answer-header">🎯 Final Answer</div>
+      <div class="ai-analyze-final-answer-content">${answerText}</div>
+    </div>
+  `;
 }
 
 function formatAIResponse(content) {
   if (!content) return "";
   
   // Filter out double asterisks for better readability
-  const cleanedContent = content.replace(/\*\*/g, '');
+  let cleanedContent = content.replace(/\*\*/g, '');
+  // Remove common markup artifacts that sometimes appear
+  cleanedContent = cleanedContent
+    // Strip fenced code blocks
+    .replace(/```[\s\S]*?```/g, (m) => m.replace(/```/g, ''))
+    // Strip inline code backticks
+    .replace(/`([^`]+)`/g, '$1')
+    // Strip LaTeX dollar math wrappers
+    .replace(/\$\$([\s\S]*?)\$\$/g, '$1')
+    .replace(/\$([^$]+)\$/g, '$1')
+    // Strip LaTeX inline parens/brackets
+    .replace(/\\\(|\\\)|\\\[|\\\]/g, '');
   
-  // Check for chart blocks
-  const chartRegex = /\[CHART: plotly_code\]\s*([\s\S]*?)\s*\[END_CHART\]/g;
-  const chartMatches = [...cleanedContent.matchAll(chartRegex)];
+  // Check for final answer
+  const finalAnswer = detectFinalAnswer(cleanedContent);
   
-  if (chartMatches.length > 0) {
-    // Process content with charts
-    return processContentWithCharts(cleanedContent, chartMatches);
+  // Regular text processing
+  // Typography: convert simple exponents/subscripts to HTML for readability
+  const applyMathTypography = (txt) => {
+    let out = txt;
+    // Simple exponents like 3^4, x^2, y^10
+    out = out.replace(/\b([A-Za-z0-9]+)\^(\d{1,3})\b/g, '$1<sup>$2</sup>');
+    // Subscripts like x_1, a_10
+    out = out.replace(/\b([A-Za-z])_(\d{1,3})\b/g, '$1<sub>$2</sub>');
+    // Chemical style: H2O, CO2 (avoid changing within longer words)
+    out = out.replace(/(?<![A-Za-z0-9])([A-Z][a-z]?)(\d{1,3})(?![A-Za-z0-9])/g, '$1<sub>$2</sub>');
+    return out;
+  };
+
+  const processedContent = applyMathTypography(processRegularContent(cleanedContent));
+  
+  // If we found a final answer, prepend it to the content
+  if (finalAnswer) {
+    return createFinalAnswerDisplay(finalAnswer.text) + processedContent;
   }
   
-  // Regular text processing without charts
-  return processRegularContent(cleanedContent);
+  return processedContent;
 }
 
-function processContentWithCharts(content, chartMatches) {
-  const parts = [];
-  let lastIndex = 0;
-  
-  for (const match of chartMatches) {
-    // Add text before chart
-    const beforeChart = content.substring(lastIndex, match.index).trim();
-    if (beforeChart) {
-      parts.push(processRegularContent(beforeChart));
-    }
-    
-    // Add chart placeholder
-    const chartId = `chart-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-    parts.push(`<div id="${chartId}" class="chart-container"></div>`);
-    
-    // Store chart code for later execution
-    window.chartQueue = window.chartQueue || [];
-    window.chartQueue.push({
-      id: chartId,
-      code: match[1].trim()
-    });
-    
-    lastIndex = match.index + match[0].length;
-  }
-  
-  // Add remaining text after last chart
-  const afterLastChart = content.substring(lastIndex).trim();
-  if (afterLastChart) {
-    parts.push(processRegularContent(afterLastChart));
-  }
-  
-  return parts.join('<br>');
-}
 
 function processRegularContent(content) {
   // Split content into lines
@@ -339,41 +652,72 @@ function processRegularContent(content) {
   return formattedLines.join('<br>');
 }
 
-async function renderCharts() {
-  if (!window.chartQueue || window.chartQueue.length === 0) return;
-  
-  for (const chart of window.chartQueue) {
-    const container = document.getElementById(chart.id);
-    if (container) {
-      try {
-        const chartElement = await renderChart(chart.code);
-        container.appendChild(chartElement);
-      } catch (error) {
-        console.error('Chart rendering failed:', error);
-        // Create a fallback message
-        const fallbackDiv = document.createElement('div');
-        fallbackDiv.innerHTML = `
-          <div style="padding: 20px; text-align: center; color: #888888; font-family: Inter, sans-serif; border: 1px solid rgba(255,255,255,0.2); border-radius: 4px; background: #1a1a1a;">
-            <div style="margin-bottom: 10px;">📊 Chart Preview</div>
-            <div style="font-size: 12px;">Interactive chart would appear here</div>
-            <div style="font-size: 10px; margin-top: 5px; color: #666;">Chart library loading issue</div>
-          </div>
-        `;
-        container.appendChild(fallbackDiv);
-      }
-    }
-  }
-  
-  // Clear the queue
-  window.chartQueue = [];
-}
 
 function renderBubble() {
   const container = ensureOverlayContainer();
   container.innerHTML = "";
   const bubble = document.createElement("div");
   bubble.className = "ai-analyze-bubble";
-  bubble.textContent = "I am your AI companion!";
+  
+  const message = document.createElement("div");
+  message.className = "ai-analyze-bubble-text";
+  message.textContent = "I am your AI companion! 🚀";
+
+  const searchWrapper = document.createElement("form");
+  searchWrapper.className = "ai-analyze-bubble-search";
+
+  const searchInput = document.createElement("input");
+  searchInput.type = "text";
+  searchInput.placeholder = "search anything!";
+  searchInput.setAttribute("aria-label", "Search anything");
+  searchInput.autocomplete = "off";
+
+  searchInput.addEventListener("input", () => {
+    const words = searchInput.value.trim().split(/\s+/).filter(Boolean);
+    if (words.length > WORD_LIMIT) {
+      searchInput.value = words.slice(0, WORD_LIMIT).join(" ");
+    }
+  });
+
+  searchWrapper.addEventListener("submit", (event) => {
+    event.preventDefault();
+    const query = searchInput.value.trim();
+    if (!query) return;
+
+    const existingOverlay = document.getElementById(OVERLAY_ID);
+    if (existingOverlay) existingOverlay.remove();
+
+    isAnalysisInProgress = true;
+    renderOverlayLoading(null, "text");
+    chrome.runtime.sendMessage({ type: "ANALYZE_TEXT_INPUT", text: query });
+  });
+
+  const searchButton = document.createElement("button");
+  searchButton.type = "submit";
+  searchButton.textContent = "Go";
+
+  const uploadButton = document.createElement("button");
+  uploadButton.type = "button";
+  uploadButton.className = "ai-analyze-upload-trigger";
+  uploadButton.textContent = "Upload image";
+
+  const hiddenInput = createHiddenFileInput(analyzeUserFile);
+  bubble.appendChild(hiddenInput);
+
+  uploadButton.addEventListener("click", () => hiddenInput.click());
+
+  searchWrapper.appendChild(searchInput);
+  searchWrapper.appendChild(searchButton);
+  searchWrapper.appendChild(uploadButton);
+
+  const dropHint = document.createElement("div");
+  dropHint.className = "ai-analyze-bubble-hint";
+  dropHint.textContent = "Drag & drop an image to analyze instantly.";
+  dropHint.addEventListener("click", () => hiddenInput.click());
+
+  bubble.appendChild(message);
+  bubble.appendChild(searchWrapper);
+  bubble.appendChild(dropHint);
   container.appendChild(bubble);
   
   // Position bubble in bottom-right corner
@@ -381,20 +725,286 @@ function renderBubble() {
   bubble.style.bottom = "20px";
   bubble.style.right = "20px";
   bubble.style.zIndex = "2147483647";
-  
-  // Fade out after 3 seconds
-  setTimeout(() => {
-    bubble.style.opacity = "0";
-    bubble.style.transition = "opacity 0.5s ease-out";
-    setTimeout(() => {
-      container.remove();
-    }, 500);
-  }, 3000);
+
+  setupFileDropZone(bubble, analyzeUserFile);
+  searchInput.focus();
 }
 
-function renderOverlayResult(content, isError, rect) {
+function countWords(text) {
+  return text.trim().split(/\s+/).filter(word => word.length > 0).length;
+}
+
+function isSameSelection(selection) {
+  if (selection.type === "image" && selection.image) {
+    return lastAnalyzedImage && 
+           lastAnalyzedImage.src === selection.image.src &&
+           lastAnalyzedImage.alt === selection.image.alt;
+  } else if (selection.type === "text" && selection.text) {
+    return lastAnalyzedText === selection.text.trim();
+  }
+  return false;
+}
+
+function updateLastAnalyzed(selection) {
+  if (selection.type === "image" && selection.image) {
+    lastAnalyzedImage = {
+      src: selection.image.src,
+      alt: selection.image.alt
+    };
+    lastAnalyzedText = "";
+  } else if (selection.type === "text" && selection.text) {
+    lastAnalyzedText = selection.text.trim();
+    lastAnalyzedImage = null;
+  }
+}
+
+function addMinimizeMaximizeFunctionality(box, minimizeBtn) {
+  let isMinimized = false;
+  
+  minimizeBtn.addEventListener('click', (e) => {
+    e.stopPropagation(); // Prevent header click
+    isMinimized = !isMinimized;
+    
+    if (isMinimized) {
+      box.classList.add('minimized');
+      minimizeBtn.innerHTML = "▲";
+      minimizeBtn.title = "Maximize";
+    } else {
+      box.classList.remove('minimized');
+      minimizeBtn.innerHTML = "▼";
+      minimizeBtn.title = "Minimize";
+    }
+  });
+  
+  // Also allow clicking the header to toggle
+  const header = box.querySelector('.ai-analyze-header');
+  if (header) {
+    header.addEventListener('click', () => {
+      isMinimized = !isMinimized;
+      
+      if (isMinimized) {
+        box.classList.add('minimized');
+        minimizeBtn.innerHTML = "▲";
+        minimizeBtn.title = "Maximize";
+      } else {
+        box.classList.remove('minimized');
+        minimizeBtn.innerHTML = "▼";
+        minimizeBtn.title = "Minimize";
+      }
+    });
+  }
+}
+
+function appendConversationMessage(content, conversationHistory) {
+  const container = document.getElementById(OVERLAY_ID);
+  if (!container) return;
+  const box = container.querySelector('.ai-analyze-box');
+  if (!box) return;
+  const body = box.querySelector('.ai-analyze-body');
+  if (!body) return;
+
+  const state = getOverlayState(container);
+  if (Array.isArray(conversationHistory) && conversationHistory.length > 0) {
+    state.conversationHistory = normalizeConversationHistory(conversationHistory);
+  }
+  if (!state.conversationHistory) {
+    state.conversationHistory = [];
+  }
+  if (!Number.isInteger(state.baseConversationLength)) {
+    state.baseConversationLength = 0;
+  }
+
+  // Find the conversation history container
+  let conversationDiv = body.querySelector('.ai-analyze-conversation-history');
+  if (!conversationDiv) {
+    // Create conversation history container if it doesn't exist
+    conversationDiv = document.createElement("div");
+    conversationDiv.className = "ai-analyze-conversation-history";
+    body.appendChild(conversationDiv);
+  }
+
+  renderConversationMessages(conversationDiv, state.conversationHistory, state.baseConversationLength || 0);
+}
+
+function createConversationInterface(originalContent, conversationHistory, options = {}) {
+  const container = ensureOverlayContainer();
+  const state = getOverlayState(container);
+  if (options.fileData) {
+    state.attachmentData = options.fileData;
+  }
+  if (options.originalCategory) {
+    state.originalCategory = options.originalCategory;
+  }
+  if (typeof originalContent === "string") {
+    state.originalContent = originalContent;
+  }
+
+  if (!Array.isArray(state.conversationHistory) || state.conversationHistory.length === 0) {
+    state.conversationHistory = buildInitialConversationHistory(
+      conversationHistory,
+      state.originalContent,
+      state.originalCategory === "image" || state.originalCategory === "file"
+        ? describeAttachmentForHistory(state.attachmentData, state.originalCategory)
+        : lastAnalyzedText
+    );
+    state.baseConversationLength = state.conversationHistory.length;
+  }
+
+  const conversation = document.createElement("div");
+  conversation.className = "ai-analyze-conversation";
+  
+  const uploadBar = document.createElement("div");
+  uploadBar.className = "ai-analyze-upload-bar";
+
+  const uploadHint = document.createElement("span");
+  uploadHint.className = "ai-analyze-upload-hint";
+  uploadHint.textContent = "Drop an image here, or";
+
+  const uploadButton = document.createElement("button");
+  uploadButton.type = "button";
+  uploadButton.className = "ai-analyze-upload-trigger";
+  uploadButton.textContent = "Upload image";
+
+  const hiddenInput = createHiddenFileInput((file) => analyzeUserFile(file));
+  uploadBar.appendChild(uploadHint);
+  uploadBar.appendChild(uploadButton);
+  uploadBar.appendChild(hiddenInput);
+
+  uploadButton.addEventListener("click", () => hiddenInput.click());
+  setupFileDropZone(uploadBar, analyzeUserFile);
+
+  const inputContainer = document.createElement("div");
+  inputContainer.className = "ai-analyze-input-container";
+  
+  const input = document.createElement("textarea");
+  input.className = "ai-analyze-input";
+  input.placeholder = "Ask a follow up or clarification!";
+  input.rows = 1;
+  
+  const sendBtn = document.createElement("button");
+  sendBtn.className = "ai-analyze-send-btn";
+  sendBtn.textContent = "Send";
+  sendBtn.disabled = true;
+  
+  const wordCount = document.createElement("div");
+  wordCount.className = "ai-analyze-word-count";
+  wordCount.textContent = `0/${WORD_LIMIT} words`;
+  
+  // Auto-resize textarea
+  input.addEventListener('input', () => {
+    input.style.height = 'auto';
+    input.style.height = Math.min(input.scrollHeight, 80) + 'px';
+    
+    const words = countWords(input.value);
+    wordCount.textContent = `${words}/${WORD_LIMIT} words`;
+    
+    if (words > WORD_LIMIT) {
+      wordCount.className = "ai-analyze-word-count warning";
+      sendBtn.disabled = true;
+    } else if (words > 0) {
+      wordCount.className = "ai-analyze-word-count";
+      sendBtn.disabled = false;
+    } else {
+      wordCount.className = "ai-analyze-word-count";
+      sendBtn.disabled = true;
+    }
+  });
+  
+  // Handle Enter key (but not Shift+Enter)
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      if (!sendBtn.disabled) {
+        sendBtn.click();
+      }
+    }
+  });
+  
+  // Send button click handler
+  sendBtn.addEventListener('click', async () => {
+    const userInput = input.value.trim();
+    if (userInput && countWords(userInput) <= WORD_LIMIT) {
+      const latestState = getOverlayState(container);
+      const historyForSend = Array.isArray(latestState?.conversationHistory)
+        ? latestState.conversationHistory
+        : [];
+      const originalAnalysis = latestState?.originalContent || originalContent;
+      const fileData = latestState?.attachmentData || options.fileData || null;
+      const isAttachmentConversation = Boolean(fileData);
+
+      // Disable input while processing
+      input.disabled = true;
+      sendBtn.disabled = true;
+      
+      // Add loading spinner to send button
+      const spinner = document.createElement("div");
+      spinner.className = "ai-analyze-send-spinner";
+      
+      // Hide text and add spinner
+      sendBtn.textContent = "";
+      sendBtn.appendChild(spinner);
+      
+      try {
+        if (isAttachmentConversation) {
+          isAnalysisInProgress = true;
+        }
+        
+        // Send follow-up request to background script with timeout
+        const response = await Promise.race([
+          chrome.runtime.sendMessage({
+            type: isAttachmentConversation ? "FOLLOW_UP_ATTACHMENT_REQUEST" : "FOLLOW_UP_REQUEST",
+            userInput: userInput,
+            originalContent: originalAnalysis,
+            conversationHistory: historyForSend,
+            attachmentData: fileData
+          }),
+          new Promise((_, reject) => 
+            setTimeout(() => reject(new Error("Request timeout after 30 seconds")), 30000)
+          )
+        ]);
+        
+        if (response && response.success) {
+          // Clear the input after successful send
+          input.value = "";
+          input.style.height = 'auto';
+          wordCount.textContent = `0/${WORD_LIMIT} words`;
+          wordCount.className = "ai-analyze-word-count";
+          // Re-enable input and restore button
+          input.disabled = false;
+          sendBtn.disabled = false;
+          sendBtn.textContent = "Send";
+          sendBtn.innerHTML = "Send"; // Remove spinner
+          isAnalysisInProgress = false;
+        } else {
+          const errorMsg = response?.error || "Failed to get response from background script";
+          console.error("Follow-up request failed:", errorMsg);
+          throw new Error(errorMsg);
+        }
+      } catch (error) {
+        console.error("Follow-up request failed:", error);
+        isAnalysisInProgress = false;
+        // Re-enable input on error and restore button
+        input.disabled = false;
+        sendBtn.disabled = false;
+        sendBtn.textContent = "Send";
+        sendBtn.innerHTML = "Send"; // Remove spinner
+      }
+    }
+  });
+  
+  inputContainer.appendChild(input);
+  inputContainer.appendChild(sendBtn);
+  conversation.appendChild(uploadBar);
+  conversation.appendChild(inputContainer);
+  conversation.appendChild(wordCount);
+  
+  return conversation;
+}
+
+function renderImageAnalysis(imageData, content, isError, conversationHistory = [], options = {}) {
   const container = ensureOverlayContainer();
   container.innerHTML = "";
+  const state = resetOverlayState(container);
   const box = document.createElement("div");
   box.className = "ai-analyze-box";
   const header = document.createElement("div");
@@ -402,31 +1012,120 @@ function renderOverlayResult(content, isError, rect) {
   
   // Create header with title and timestamp
   const headerContent = document.createElement("div");
-  headerContent.style.display = "flex";
-  headerContent.style.justifyContent = "space-between";
-  headerContent.style.alignItems = "center";
-  headerContent.style.width = "100%";
+  headerContent.className = "ai-analyze-header-content";
   
+  const inferredMime = imageData?.mimeType || inferMimeTypeFromSrc(imageData?.src);
+  const categoryHint = options.originalCategory || classifyFileType(inferredMime || (imageData?.src ? inferMimeTypeFromSrc(imageData.src) : ""));
+  const isImage = categoryHint === "image" || !categoryHint || categoryHint === "unknown";
+
   const title = document.createElement("span");
-  title.textContent = isError ? "Error" : "AI Analysis";
+  if (isError) {
+    title.textContent = "Error";
+  } else if (isImage) {
+    title.textContent = "Image Analysis";
+  } else {
+    title.textContent = "File Analysis";
+  }
   
   const timestamp = document.createElement("span");
   timestamp.className = "ai-analyze-timestamp";
   timestamp.textContent = getCurrentDateTime();
   
+  // Add minimize button
+  const minimizeBtn = document.createElement("button");
+  minimizeBtn.className = "ai-analyze-minimize-btn";
+  minimizeBtn.innerHTML = "▼";
+  minimizeBtn.title = "Minimize";
+  
   headerContent.appendChild(title);
   headerContent.appendChild(timestamp);
+  headerContent.appendChild(minimizeBtn);
   header.appendChild(headerContent);
+  
+  // Add minimize/maximize functionality
+  addMinimizeMaximizeFunctionality(box, minimizeBtn);
   
   const body = document.createElement("div");
   body.className = "ai-analyze-body";
   
-  if (isError) {
-    body.textContent = content;
+  // Add preview
+  if (isImage && imageData?.src) {
+    const imagePreview = document.createElement("div");
+    imagePreview.className = "ai-analyze-image-preview";
+    
+    const img = document.createElement("img");
+    img.src = imageData.src;
+    img.alt = imageData.alt || imageData.name || "Uploaded image";
+    img.style.maxWidth = "100%";
+    img.style.maxHeight = "220px";
+    img.style.borderRadius = "6px";
+    img.style.border = "1px solid rgba(255,255,255,0.2)";
+    
+    imagePreview.appendChild(img);
+    body.appendChild(imagePreview);
   } else {
-    body.innerHTML = formatAIResponse(content);
-    // Render charts after content is displayed
-    setTimeout(() => renderCharts(), 100);
+    const filePreview = document.createElement("div");
+    filePreview.className = "ai-analyze-file-preview";
+    
+    const icon = document.createElement("div");
+    icon.className = "ai-analyze-file-icon";
+    icon.textContent = "📄";
+    
+    const meta = document.createElement("div");
+    meta.className = "ai-analyze-file-meta";
+    const name = document.createElement("div");
+    name.className = "ai-analyze-file-name";
+    name.textContent = imageData?.name || "Uploaded file";
+    const details = document.createElement("div");
+    details.className = "ai-analyze-file-details";
+    const sizeText = formatFileSize(imageData?.size);
+    const detailParts = [];
+    if (sizeText) detailParts.push(sizeText);
+    details.textContent = detailParts.join(" • ");
+    meta.appendChild(name);
+    meta.appendChild(details);
+    
+    filePreview.appendChild(icon);
+    filePreview.appendChild(meta);
+    body.appendChild(filePreview);
+  }
+  
+  if (isError) {
+    const errorDiv = document.createElement("div");
+    errorDiv.textContent = content;
+    errorDiv.style.marginTop = "10px";
+    body.appendChild(errorDiv);
+  } else {
+    const analysisDiv = document.createElement("div");
+    analysisDiv.className = "ai-analyze-image-analysis";
+    analysisDiv.innerHTML = formatAIResponse(content);
+    body.appendChild(analysisDiv);
+  }
+  
+  const followUpAttachment = {
+    src: imageData?.src || "",
+    base64: imageData?.base64 || null,
+    mimeType: inferredMime || "image/png",
+    name: imageData?.name || imageData?.alt || (isImage ? "Uploaded image" : "Uploaded file"),
+    size: imageData?.size || null
+  };
+
+  state.originalContent = typeof content === "string" ? content : "";
+  state.originalCategory = isImage ? "image" : "file";
+  state.attachmentData = followUpAttachment;
+  state.conversationHistory = buildInitialConversationHistory(
+    conversationHistory,
+    state.originalContent,
+    describeAttachmentForHistory(followUpAttachment, state.originalCategory)
+  );
+  state.baseConversationLength = state.conversationHistory.length;
+  
+  // Add conversation history if it exists
+  if (state.conversationHistory.length > state.baseConversationLength) {
+    const conversationDiv = document.createElement("div");
+    conversationDiv.className = "ai-analyze-conversation-history";
+    renderConversationMessages(conversationDiv, state.conversationHistory, state.baseConversationLength);
+    body.appendChild(conversationDiv);
   }
   
   const actions = document.createElement("div");
@@ -442,29 +1141,226 @@ function renderOverlayResult(content, isError, rect) {
   });
   const closeBtn = document.createElement("button");
   closeBtn.textContent = "Close";
-  closeBtn.addEventListener("click", () => container.remove());
+  closeBtn.addEventListener("click", () => {
+    isAnalysisInProgress = false;
+    container.remove();
+  });
   actions.appendChild(copyBtn);
   actions.appendChild(closeBtn);
-  box.appendChild(header);
-  box.appendChild(body);
-  box.appendChild(actions);
+  
+  // Add conversation interface if not an error
+  if (!isError) {
+    const conversation = createConversationInterface(content, state.conversationHistory, {
+      fileData: followUpAttachment,
+      originalCategory: state.originalCategory
+    });
+    box.appendChild(header);
+    box.appendChild(body);
+    box.appendChild(conversation);
+    box.appendChild(actions);
+  } else {
+    box.appendChild(header);
+    box.appendChild(body);
+    box.appendChild(actions);
+  }
+  
   container.appendChild(box);
   positionOverlay(container);
 }
 
+function renderOverlayResult(content, isError, rect, conversationHistory = []) {
+  const container = ensureOverlayContainer();
+  container.innerHTML = "";
+  const state = resetOverlayState(container);
+  const box = document.createElement("div");
+  box.className = "ai-analyze-box";
+  const header = document.createElement("div");
+  header.className = "ai-analyze-header";
+  
+  // Create header with title and timestamp
+  const headerContent = document.createElement("div");
+  headerContent.className = "ai-analyze-header-content";
+  
+  const title = document.createElement("span");
+  title.textContent = isError ? "Error" : "AI Analysis";
+  
+  const timestamp = document.createElement("span");
+  timestamp.className = "ai-analyze-timestamp";
+  timestamp.textContent = getCurrentDateTime();
+  
+  // Add minimize button
+  const minimizeBtn = document.createElement("button");
+  minimizeBtn.className = "ai-analyze-minimize-btn";
+  minimizeBtn.innerHTML = "▼";
+  minimizeBtn.title = "Minimize";
+  
+  headerContent.appendChild(title);
+  headerContent.appendChild(timestamp);
+  headerContent.appendChild(minimizeBtn);
+  header.appendChild(headerContent);
+  
+  // Add minimize/maximize functionality
+  addMinimizeMaximizeFunctionality(box, minimizeBtn);
+  
+  const body = document.createElement("div");
+  body.className = "ai-analyze-body";
+  
+  if (isError) {
+    body.textContent = content;
+  } else {
+    body.innerHTML = formatAIResponse(content);
+  }
+
+  state.originalContent = typeof content === "string" ? content : "";
+  state.originalCategory = "text";
+  state.attachmentData = null;
+  state.conversationHistory = buildInitialConversationHistory(
+    conversationHistory,
+    state.originalContent,
+    lastAnalyzedText
+  );
+  state.baseConversationLength = state.conversationHistory.length;
+  
+  if (state.conversationHistory.length > state.baseConversationLength) {
+    const conversationDiv = document.createElement("div");
+    conversationDiv.className = "ai-analyze-conversation-history";
+    renderConversationMessages(conversationDiv, state.conversationHistory, state.baseConversationLength);
+    body.appendChild(conversationDiv);
+  }
+  
+  const actions = document.createElement("div");
+  actions.className = "ai-analyze-actions";
+  const copyBtn = document.createElement("button");
+  copyBtn.textContent = "Copy";
+  copyBtn.addEventListener("click", async () => {
+    try {
+      await navigator.clipboard.writeText(content);
+      copyBtn.textContent = "Copied";
+      setTimeout(() => (copyBtn.textContent = "Copy"), 1200);
+    } catch (_) {}
+  });
+  const closeBtn = document.createElement("button");
+  closeBtn.textContent = "Close";
+  closeBtn.addEventListener("click", () => {
+    isAnalysisInProgress = false;
+    container.remove();
+  });
+  actions.appendChild(copyBtn);
+  actions.appendChild(closeBtn);
+  
+  // Add conversation interface if not an error
+  if (!isError) {
+    const conversation = createConversationInterface(content, state.conversationHistory);
+    box.appendChild(header);
+    box.appendChild(body);
+    box.appendChild(conversation);
+    box.appendChild(actions);
+  } else {
+    box.appendChild(header);
+    box.appendChild(body);
+    box.appendChild(actions);
+  }
+  
+  container.appendChild(box);
+  positionOverlay(container);
+}
+
+// ============================================================================
+// OPTIMIZATION: Streaming support - accumulate and display chunks in real-time
+// ============================================================================
+let streamingContent = "";
+let streamingActive = false;
+
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message && message.type === "GET_SELECTION_AND_SHOW_LOADING") {
-    const { text, rect } = getSelectionWithRect();
-    if (text && text.trim()) renderOverlayLoading(rect);
-    sendResponse({ text, rect });
+    const selection = getSelectionWithRect();
+    
+    // Check if this is the same selection as last time
+    if (isSameSelection(selection)) {
+      // Close existing overlay and return without analyzing
+      closeOverlay();
+      sendResponse(selection);
+      return true;
+    }
+    
+    // Reset streaming state for new request
+    streamingContent = "";
+    streamingActive = true;
+    
+    if (selection.type === "image" && selection.image) {
+      isAnalysisInProgress = true;
+      renderOverlayLoading(selection.rect, "image");
+    } else if (selection.text && selection.text.trim()) {
+      isAnalysisInProgress = true;
+      renderOverlayLoading(selection.rect, "text");
+    }
+    sendResponse(selection);
     return true;
   }
+  
+  // OPTIMIZATION: Handle streaming chunks
+  if (message && message.type === "STREAM_CHUNK") {
+    if (!streamingActive) return;
+    
+    streamingContent += message.chunk;
+    
+    // Update the overlay with accumulated content
+    const container = document.getElementById(OVERLAY_ID);
+    if (!container) {
+      streamingActive = false;
+      return;
+    }
+    
+    const box = container.querySelector('.ai-analyze-box');
+    if (!box) {
+      streamingActive = false;
+      return;
+    }
+    
+    let body = box.querySelector('.ai-analyze-body');
+    if (!body) {
+      // If body doesn't exist yet, create it (replace loading state)
+      const existingBody = box.querySelector('.ai-analyze-body');
+      if (existingBody) {
+        body = existingBody;
+      } else {
+        streamingActive = false;
+        return;
+      }
+    }
+    
+    // Update body with formatted streaming content + cursor
+    body.innerHTML = formatAIResponse(streamingContent) + '<span class="ai-analyze-streaming-cursor"></span>';
+    
+    return;
+  }
+  
   if (message && message.type === "SHOW_RESULT") {
-    renderOverlayResult(message.content || "(empty)", false, null);
+    // Stop streaming, show final result
+    streamingActive = false;
+    streamingContent = "";
+    if (isAnalysisInProgress) {
+      isAnalysisInProgress = false;
+      // Update last analyzed content for text results
+      const selection = getSelectionWithRect();
+      if (selection.type === "text" && selection.text) {
+        updateLastAnalyzed(selection);
+      }
+      renderOverlayResult(message.content || "(empty)", false, null, message.conversationHistory || []);
+    }
     return;
   }
   if (message && message.type === "SHOW_ERROR") {
-    renderOverlayResult(message.error || "Unknown error", true, null);
+    if (isAnalysisInProgress) {
+      isAnalysisInProgress = false;
+      renderOverlayResult(message.error || "Unknown error", true, null);
+    }
+    return;
+  }
+  if (message && message.type === "SHOW_LOADING") {
+    isAnalysisInProgress = true;
+    const variant = message.variant || (message.payload && message.payload.variant) || "text";
+    renderOverlayLoading(null, variant);
     return;
   }
   if (message && message.type === "SHOW_BUBBLE") {
@@ -477,6 +1373,36 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   }
   if (message && message.type === "CLOSE_OVERLAY") {
     closeOverlay();
+    return;
+  }
+  if (message && message.type === "FOLLOW_UP_RESPONSE") {
+    // Handle follow-up response by appending to existing overlay
+    appendConversationMessage(message.content || "(empty)", message.conversationHistory || []);
+    return;
+  }
+  if (message && message.type === "SHOW_IMAGE_RESULT") {
+    if (isAnalysisInProgress) {
+      isAnalysisInProgress = false;
+      // Update last analyzed content for image results
+      const selection = getSelectionWithRect();
+      if (selection.type === "image" && selection.image) {
+        updateLastAnalyzed(selection);
+      }
+      const mimeType = message.imageData && (message.imageData.mimeType || inferMimeTypeFromSrc(message.imageData.src));
+      const category = mimeType ? classifyFileType(mimeType) : "unknown";
+      const options = category === "unknown" ? {} : { originalCategory: category };
+      renderImageAnalysis(message.imageData, message.content || "(empty)", false, message.conversationHistory || [], options);
+    }
+    return;
+  }
+  if (message && message.type === "SHOW_IMAGE_ERROR") {
+    if (isAnalysisInProgress) {
+      isAnalysisInProgress = false;
+      const mimeType = message.imageData && (message.imageData.mimeType || inferMimeTypeFromSrc(message.imageData.src));
+      const category = mimeType ? classifyFileType(mimeType) : "unknown";
+      const options = category === "unknown" ? {} : { originalCategory: category };
+      renderImageAnalysis(message.imageData, message.error || "Unknown error", true, [], options);
+    }
     return;
   }
 });

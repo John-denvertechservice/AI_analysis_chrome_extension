@@ -1,12 +1,13 @@
 {
   "manifest_version": 3,
   "name": "AI Analyze Selection",
-  "version": "0.1.0",
-  "description": "Analyze selected text with a keystroke.",
+  "version": "0.6.0",
+  "description": "Analyze selected text and images with OpenAI GPT models or Claude AI models using a keystroke.",
   "permissions": [
     "storage",
     "activeTab",
-    "scripting"
+    "scripting",
+    "contextMenus"
   ],
   "host_permissions": [
     "<all_urls>"

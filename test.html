@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Analyze Extension Test Page</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            line-height: 1.6;
+        }
+        .test-section {
+            margin: 30px 0;
+            padding: 20px;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+        }
+        .math-problem {
+            background-color: #f0f8ff;
+            padding: 15px;
+            border-left: 4px solid #007acc;
+        }
+        .text-analysis {
+            background-color: #f0fff0;
+            padding: 15px;
+            border-left: 4px solid #28a745;
+        }
+        .image-test {
+            background-color: #fff8f0;
+            padding: 15px;
+            border-left: 4px solid #ff8c00;
+        }
+        img {
+            max-width: 100%;
+            height: auto;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        .instructions {
+            background-color: #f8f9fa;
+            padding: 15px;
+            border-radius: 4px;
+            margin-bottom: 20px;
+        }
+    </style>
+</head>
+<body>
+    <h1>AI Analyze Extension Test Page</h1>
+    
+    <div class="instructions">
+        <h2>How to Test</h2>
+        <ol>
+            <li>Make sure the AI Analyze extension is loaded in Chrome</li>
+            <li>Configure your API key in the extension options (OpenAI or Claude)</li>
+            <li>Select any text or image below and press <strong>Alt+Shift+A</strong></li>
+            <li>Test both OpenAI and Claude providers by switching in the extension popup</li>
+            <li>Try the latest Claude 3.5 Sonnet model for enhanced capabilities</li>
+            <li><strong>Optional:</strong> Open browser console and run the decision tree verification script</li>
+        </ol>
+        <p><strong>Decision Tree Verification:</strong> Open browser console (F12) and run the verification script to test the logic before testing with AI models.</p>
+    </div>
+
+    <div class="test-section math-problem">
+        <h3>Mathematical Problem Test</h3>
+        <p>Select this text and analyze it:</p>
+        <p><strong>Solve for x: 2x + 5 = 13</strong></p>
+        <p>This should trigger the mathematical problem solving mode with step-by-step solutions.</p>
+    </div>
+
+    <div class="test-section text-analysis">
+        <h3>Text Analysis Test</h3>
+        <p>Select this text and analyze it:</p>
+        <p><strong>The quick brown fox jumps over the lazy dog. This sentence contains every letter of the alphabet and is commonly used for testing typing skills and font displays.</strong></p>
+        <p>This should trigger general text analysis and summarization.</p>
+    </div>
+
+    <div class="test-section">
+        <h3>Question Test</h3>
+        <p>Select this text and analyze it:</p>
+        <p><strong>What are the benefits of renewable energy sources?</strong></p>
+        <p>This should trigger question-answering mode.</p>
+    </div>
+
+    <div class="test-section">
+        <h3>Code Analysis Test</h3>
+        <p>Select this code and analyze it:</p>
+        <pre><code>function fibonacci(n) {
+    if (n <= 1) return n;
+    return fibonacci(n - 1) + fibonacci(n - 2);
+}</code></pre>
+        <p>This should trigger code analysis mode (no Final Answer).</p>
+    </div>
+
+    <div class="test-section">
+        <h3>Decision Tree Test Examples</h3>
+        
+        <h4>Fill-in-the-blank Test (Should have Final Answer)</h4>
+        <p>Select this text: <strong>Cats belong to the species _____</strong></p>
+        
+        <h4>Question Test (Should have Final Answer)</h4>
+        <p>Select this text: <strong>What is the capital of France?</strong></p>
+        
+        <h4>Matter-of-fact Test (Should NOT have Final Answer)</h4>
+        <p>Select this text: <strong>The sky is blue and water is wet.</strong></p>
+        
+        <h4>Command Test (Should have Final Answer)</h4>
+        <p>Select this text: <strong>Calculate the area of a circle with radius 5</strong></p>
+        
+        <h4>Long Text Test (Should NOT have Final Answer)</h4>
+        <p>Select this long text:</p>
+        <p><strong>Artificial intelligence has revolutionized many industries and continues to transform the way we work, live, and interact with technology. From machine learning algorithms that power recommendation systems to natural language processing models that enable chatbots and virtual assistants, AI is becoming increasingly sophisticated and capable. The development of large language models has opened up new possibilities for human-computer interaction, allowing for more natural and intuitive communication. As AI technology continues to advance, we can expect to see even more innovative applications and use cases emerge across various sectors including healthcare, finance, education, and entertainment. The future of AI holds great promise for solving complex problems and improving efficiency in ways we are only beginning to understand.</strong></p>
+    </div>
+
+    <div class="test-section image-test">
+        <h3>Image Analysis Test</h3>
+        <p>Right-click on the image below and select "Analyze image with AI Analyze":</p>
+        <img src="data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMzAwIiBoZWlnaHQ9IjIwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KICA8cmVjdCB3aWR0aD0iMzAwIiBoZWlnaHQ9IjIwMCIgZmlsbD0iIzQyODVmNCIvPgogIDx0ZXh0IHg9IjE1MCIgeT0iMTAwIiBmb250LWZhbWlseT0iQXJpYWwsIHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMjQiIGZpbGw9IndoaXRlIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIj5UZXN0IENoYXJ0PC90ZXh0Pgo8L3N2Zz4K" alt="Test Chart" />
+        <p>This should trigger image analysis mode.</p>
+    </div>
+
+    <div class="test-section">
+        <h3>Provider Testing</h3>
+        <p>Test both AI providers:</p>
+        <ol>
+            <li>Open the extension popup</li>
+            <li>Switch between "OpenAI" and "Claude (Anthropic)" providers</li>
+            <li>Select different models for each provider (Claude 3.5 Sonnet is the default)</li>
+            <li>Test the same content with both providers to compare responses</li>
+            <li>Try the enhanced Claude models with 2000 token responses</li>
+        </ol>
+    </div>
+
+    <div class="test-section">
+        <h3>Decision Tree Testing</h3>
+        <p>Test the new decision tree rules:</p>
+        <ol>
+            <li><strong>Over 75 words:</strong> Select long text to test summarization without Final Answer</li>
+            <li><strong>Fill-in-the-blank:</strong> Select "Cats belong to the species _____" to test Final Answer</li>
+            <li><strong>Questions:</strong> Select "What is the capital of France?" to test Final Answer</li>
+            <li><strong>Matter-of-fact:</strong> Select "The sky is blue" to test no Final Answer</li>
+            <li><strong>Commands:</strong> Select "Calculate 2 + 2" to test Final Answer</li>
+            <li><strong>Code:</strong> Select code snippets to test no Final Answer</li>
+        </ol>
+    </div>
+
+    <div class="test-section">
+        <h3>Conversation Testing</h3>
+        <p>After getting an initial analysis:</p>
+        <ol>
+            <li>Use the follow-up question feature</li>
+            <li>Ask for clarification or additional details</li>
+            <li>Test the conversation history functionality</li>
+            <li>Try uploading files during conversations</li>
+        </ol>
+    </div>
+
+    <script>
+        // Add some interactive elements for testing
+        document.addEventListener('DOMContentLoaded', function() {
+            console.log('AI Analyze Extension Test Page Loaded');
+            console.log('Select any text and press Alt+Shift+A to test the extension');
+            console.log('Run testDecisionTree() in console to verify decision tree logic');
+        });
+        
+        // Decision Tree Test Verification Script
+        function testDecisionTree() {
+            console.log("🧪 Testing Decision Tree Implementation");
+            console.log("=====================================");
+            
+            // Test cases
+            const testCases = [
+                {
+                    name: "Long Text (>75 words)",
+                    text: "Artificial intelligence has revolutionized many industries and continues to transform the way we work, live, and interact with technology. From machine learning algorithms that power recommendation systems to natural language processing models that enable chatbots and virtual assistants, AI is becoming increasingly sophisticated and capable. The development of large language models has opened up new possibilities for human-computer interaction, allowing for more natural and intuitive communication. As AI technology continues to advance, we can expect to see even more innovative applications and use cases emerge across various sectors including healthcare, finance, education, and entertainment. The future of AI holds great promise for solving complex problems and improving efficiency in ways we are only beginning to understand.",
+                    expectedFinalAnswer: false,
+                    expectedBehavior: "Summarize + ask how to proceed"
+                },
+                {
+                    name: "Fill-in-the-blank",
+                    text: "Cats belong to the species _____",
+                    expectedFinalAnswer: true,
+                    expectedBehavior: "Return most likely answer"
+                },
+                {
+                    name: "Question",
+                    text: "What is the capital of France?",
+                    expectedFinalAnswer: true,
+                    expectedBehavior: "Answer directly"
+                },
+                {
+                    name: "Matter-of-fact Statement",
+                    text: "The sky is blue and water is wet.",
+                    expectedFinalAnswer: false,
+                    expectedBehavior: "Brief summary + ask how to proceed"
+                },
+                {
+                    name: "Command",
+                    text: "Calculate the area of a circle with radius 5",
+                    expectedFinalAnswer: true,
+                    expectedBehavior: "Execute and return result"
+                },
+                {
+                    name: "Code",
+                    text: "function fibonacci(n) {\n    if (n <= 1) return n;\n    return fibonacci(n - 1) + fibonacci(n - 2);\n}",
+                    expectedFinalAnswer: false,
+                    expectedBehavior: "Identify language + summarize"
+                }
+            ];
+            
+            // Helper functions (simplified versions from background.js)
+            function getWordCount(text) {
+                return text.trim().split(/\s+/).filter(Boolean).length;
+            }
+            
+            function isFillInBlank(text) {
+                const t = text.trim();
+                if (/{?_{2,}}?/.test(t) || /\b_{2,}\b/.test(t)) return true;
+                if (/:\s*\?$/.test(t) || /\bfill\s*in\s*the\s*blank\b/i.test(t)) return true;
+                if (/[_–—-]{3,}\s*\?$/.test(t)) return true;
+                return false;
+            }
+            
+            function isLikelyQuestion(text) {
+                const trimmed = text.trim();
+                const lower = trimmed.toLowerCase();
+                const interrogatives = ["how", "what", "why", "when", "where", "which", "who", "whom", "whose", "can", "could", "would", "should", "is", "are", "am", "will", "may", "might", "do", "does", "did"];
+                return /\?\s*$/.test(trimmed) || (interrogatives.some((word) => lower.startsWith(`${word} `)) && trimmed.length <= 200);
+            }
+            
+            function isLikelyCommand(text) {
+                const trimmed = text.trim().toLowerCase();
+                const imperativeVerbs = [
+                    "answer", "calculate", "compute", "summarize", "solve", "find", "list",
+                    "graph", "plot", "chart", "translate", "explain", "draft", "write",
+                    "build", "create", "plan", "outline", "analyze", "estimate"
+                ];
+                return imperativeVerbs.some((verb) => trimmed.startsWith(verb) || trimmed.startsWith(`please ${verb}`));
+            }
+            
+            function isLikelyCode(text) {
+                const codeIndicators = [
+                    /```[\s\S]*```/, // fenced code block
+                    /#include\s+<[^>]+>/,
+                    /\b(function|const|let|var|console\.log|=>|class|import|export|async|await)\b/,
+                    /\b(def|lambda|print\(|self|None)\b/,
+                    /\bpublic\s+class\b/,
+                    /\bSystem\.out\.println\b/,
+                    /\bBEGIN\b.*\bEND\b/si,
+                    /<\/?[a-z][^>]*>/ // HTML/XML
+                ];
+                return codeIndicators.some((pattern) => pattern.test(text));
+            }
+            
+            // Test each case
+            testCases.forEach((testCase, index) => {
+                console.log(`\n${index + 1}. ${testCase.name}`);
+                console.log(`Text: "${testCase.text.substring(0, 50)}${testCase.text.length > 50 ? '...' : ''}"`);
+                
+                const words = getWordCount(testCase.text);
+                const isFillBlank = isFillInBlank(testCase.text);
+                const isQuestion = isLikelyQuestion(testCase.text);
+                const isCommand = isLikelyCommand(testCase.text);
+                const isCode = isLikelyCode(testCase.text);
+                
+                console.log(`Word count: ${words}`);
+                console.log(`Fill-in-blank: ${isFillBlank}`);
+                console.log(`Question: ${isQuestion}`);
+                console.log(`Command: ${isCommand}`);
+                console.log(`Code: ${isCode}`);
+                
+                // Determine expected behavior based on decision tree
+                let actualBehavior = "";
+                let actualFinalAnswer = false;
+                
+                if (words > 75) {
+                    actualBehavior = "Summarize + ask how to proceed";
+                    actualFinalAnswer = false;
+                } else if (isFillBlank) {
+                    actualBehavior = "Return most likely answer";
+                    actualFinalAnswer = true;
+                } else if (isQuestion) {
+                    actualBehavior = "Answer directly";
+                    actualFinalAnswer = true;
+                } else if (isCommand) {
+                    actualBehavior = "Execute and return result";
+                    actualFinalAnswer = true;
+                } else if (isCode) {
+                    actualBehavior = "Identify language + summarize";
+                    actualFinalAnswer = false;
+                } else {
+                    actualBehavior = "Brief summary + ask how to proceed";
+                    actualFinalAnswer = false;
+                }
+                
+                console.log(`Expected behavior: ${testCase.expectedBehavior}`);
+                console.log(`Actual behavior: ${actualBehavior}`);
+                console.log(`Expected Final Answer: ${testCase.expectedFinalAnswer}`);
+                console.log(`Actual Final Answer: ${actualFinalAnswer}`);
+                
+                const behaviorMatch = actualBehavior === testCase.expectedBehavior;
+                const finalAnswerMatch = actualFinalAnswer === testCase.expectedFinalAnswer;
+                
+                if (behaviorMatch && finalAnswerMatch) {
+                    console.log("✅ PASS");
+                } else {
+                    console.log("❌ FAIL");
+                    if (!behaviorMatch) console.log(`   Behavior mismatch: expected "${testCase.expectedBehavior}", got "${actualBehavior}"`);
+                    if (!finalAnswerMatch) console.log(`   Final Answer mismatch: expected ${testCase.expectedFinalAnswer}, got ${actualFinalAnswer}`);
+                }
+            });
+            
+            console.log("\n🎯 Decision Tree Test Complete!");
+            console.log("Now test the actual extension with these same examples to verify AI responses match the logic.");
+        }
+    </script>
+</body>
+</html>
