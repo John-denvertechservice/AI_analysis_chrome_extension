@@ -12,6 +12,30 @@
       button { padding: 8px 12px; border-radius: 6px; border: 1px solid rgba(0,0,0,0.15); background: white; cursor: pointer; }
       button:hover { background: #f3f4f6; }
       .status { margin-top: 8px; font-size: 13px; color: #374151; }
+      
+      /* Database Management Styles */
+      .stats-section, .usage-section, .maintenance-section { margin: 24px 0; }
+      .stats-grid, .usage-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin: 16px 0; }
+      .stat-card, .usage-card { background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 8px; padding: 16px; }
+      .stat-value, .metric-value { font-size: 24px; font-weight: 700; color: #1f2937; }
+      .stat-label, .metric-label { font-size: 14px; color: #6b7280; margin-bottom: 4px; }
+      .stat-detail { font-size: 12px; color: #9ca3af; margin-top: 4px; }
+      .provider-grid, .model-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin: 16px 0; }
+      .provider-card, .model-card { background: #f3f4f6; border-radius: 6px; padding: 12px; }
+      .provider-name, .model-name { font-weight: 600; color: #374151; margin-bottom: 8px; }
+      .provider-stats, .model-stats { font-size: 13px; color: #6b7280; }
+      .maintenance-actions { display: flex; gap: 12px; margin: 16px 0; }
+      .btn { padding: 8px 16px; border-radius: 6px; border: 1px solid #d1d5db; background: white; cursor: pointer; font-size: 14px; }
+      .btn-primary { background: #3b82f6; color: white; border-color: #3b82f6; }
+      .btn-secondary { background: #6b7280; color: white; border-color: #6b7280; }
+      .btn-danger { background: #dc2626; color: white; border-color: #dc2626; }
+      .btn:hover { opacity: 0.9; }
+      .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+      .maintenance-info { background: #f3f4f6; border-radius: 6px; padding: 16px; margin: 16px 0; }
+      .maintenance-results { margin: 16px 0; }
+      .success { background: #d1fae5; border: 1px solid #a7f3d0; border-radius: 6px; padding: 12px; color: #065f46; }
+      .error { background: #fee2e2; border: 1px solid #fecaca; border-radius: 6px; padding: 12px; color: #991b1b; }
+      .metric { display: flex; justify-content: space-between; align-items: center; margin: 8px 0; }
     </style>
   </head>
   <body>
@@ -46,6 +70,16 @@
       <span class="status" id="status"></span>
     </div>
 
+    <hr style="margin: 32px 0; border: none; border-top: 1px solid #e5e7eb;">
+
+    <h2>Database Management</h2>
+    <p>Monitor database performance, cache statistics, and perform maintenance tasks.</p>
+    
+    <div id="database-stats"></div>
+    <div id="usage-stats"></div>
+    <div id="database-maintenance"></div>
+
     <script src="options.js"></script>
+    <script src="database-management.js"></script>
   </body>
 </html>

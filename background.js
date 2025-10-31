@@ -1,7 +1,11 @@
 // Background service worker for handling command and AI calls
 
+// Note: Database integration (database.js and database-integration.js) is designed
+// for the Node.js server backend, not the browser extension service worker.
+// The extension service worker uses browser APIs (chrome.storage) for caching.
+
 // ============================================================================
-// OPTIMIZATION: Model Selection Caching (1-hour TTL)
+// OPTIMIZATION: Model Selection Caching (1-hour TTL) - Enhanced with Database
 // ============================================================================
 const modelCache = {
   claudeModel: null,
@@ -1499,6 +1503,7 @@ async function analyzeSelectionInTab(tab) {
           analysis = await fetchOpenAIImageAnalysis(apiKey, model, selection.image);
         }
       } catch (err) {
+        
         const overlayStillVisible = await safeSendMessage(tab.id, { type: "CHECK_OVERLAY_VISIBLE" });
         if (!overlayStillVisible || !overlayStillVisible.visible) return;
 
@@ -1530,6 +1535,7 @@ async function analyzeSelectionInTab(tab) {
           analysis = await fetchOpenAIAnalysis(apiKey, model, selection.text);
         }
       } catch (err) {
+        
         const overlayStillVisible = await safeSendMessage(tab.id, { type: "CHECK_OVERLAY_VISIBLE" });
         if (!overlayStillVisible || !overlayStillVisible.visible) return;
 
