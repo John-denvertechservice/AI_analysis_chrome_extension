@@ -405,12 +405,13 @@ function closeOverlay() {
 }
 
 function positionOverlay(el, rect) {
-  // Position in bottom-right corner of the browser window
+  // Position in bottom-right corner with margin
   el.style.position = "fixed";
   el.style.bottom = "20px";
   el.style.right = "20px";
   el.style.top = "auto";
   el.style.left = "auto";
+  el.style.transform = "none";
 }
 
 function getCurrentDateTime() {
@@ -1130,6 +1131,36 @@ function renderImageAnalysis(imageData, content, isError, conversationHistory = 
   
   const actions = document.createElement("div");
   actions.className = "ai-analyze-actions";
+  
+  // Create feedback buttons
+  const feedbackContainer = document.createElement("div");
+  feedbackContainer.className = "ai-analyze-feedback";
+  
+  const thumbsUpBtn = document.createElement("button");
+  thumbsUpBtn.className = "ai-analyze-feedback-btn";
+  thumbsUpBtn.innerHTML = "✓";
+  thumbsUpBtn.title = "Good response";
+  thumbsUpBtn.setAttribute("data-feedback", "up");
+  
+  const thumbsDownBtn = document.createElement("button");
+  thumbsDownBtn.className = "ai-analyze-feedback-btn";
+  thumbsDownBtn.innerHTML = "✗";
+  thumbsDownBtn.title = "Bad response";
+  thumbsDownBtn.setAttribute("data-feedback", "down");
+  
+  thumbsUpBtn.addEventListener("click", () => {
+    thumbsUpBtn.classList.toggle("active");
+    thumbsDownBtn.classList.remove("active");
+  });
+  
+  thumbsDownBtn.addEventListener("click", () => {
+    thumbsDownBtn.classList.toggle("active");
+    thumbsUpBtn.classList.remove("active");
+  });
+  
+  feedbackContainer.appendChild(thumbsUpBtn);
+  feedbackContainer.appendChild(thumbsDownBtn);
+  
   const copyBtn = document.createElement("button");
   copyBtn.textContent = "Copy";
   copyBtn.addEventListener("click", async () => {
@@ -1145,6 +1176,8 @@ function renderImageAnalysis(imageData, content, isError, conversationHistory = 
     isAnalysisInProgress = false;
     container.remove();
   });
+  
+  actions.appendChild(feedbackContainer);
   actions.appendChild(copyBtn);
   actions.appendChild(closeBtn);
   
@@ -1230,6 +1263,36 @@ function renderOverlayResult(content, isError, rect, conversationHistory = []) {
   
   const actions = document.createElement("div");
   actions.className = "ai-analyze-actions";
+  
+  // Create feedback buttons
+  const feedbackContainer = document.createElement("div");
+  feedbackContainer.className = "ai-analyze-feedback";
+  
+  const thumbsUpBtn = document.createElement("button");
+  thumbsUpBtn.className = "ai-analyze-feedback-btn";
+  thumbsUpBtn.innerHTML = "✓";
+  thumbsUpBtn.title = "Good response";
+  thumbsUpBtn.setAttribute("data-feedback", "up");
+  
+  const thumbsDownBtn = document.createElement("button");
+  thumbsDownBtn.className = "ai-analyze-feedback-btn";
+  thumbsDownBtn.innerHTML = "✗";
+  thumbsDownBtn.title = "Bad response";
+  thumbsDownBtn.setAttribute("data-feedback", "down");
+  
+  thumbsUpBtn.addEventListener("click", () => {
+    thumbsUpBtn.classList.toggle("active");
+    thumbsDownBtn.classList.remove("active");
+  });
+  
+  thumbsDownBtn.addEventListener("click", () => {
+    thumbsDownBtn.classList.toggle("active");
+    thumbsUpBtn.classList.remove("active");
+  });
+  
+  feedbackContainer.appendChild(thumbsUpBtn);
+  feedbackContainer.appendChild(thumbsDownBtn);
+  
   const copyBtn = document.createElement("button");
   copyBtn.textContent = "Copy";
   copyBtn.addEventListener("click", async () => {
@@ -1245,6 +1308,8 @@ function renderOverlayResult(content, isError, rect, conversationHistory = []) {
     isAnalysisInProgress = false;
     container.remove();
   });
+  
+  actions.appendChild(feedbackContainer);
   actions.appendChild(copyBtn);
   actions.appendChild(closeBtn);
   

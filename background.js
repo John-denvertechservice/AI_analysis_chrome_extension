@@ -1637,7 +1637,15 @@ chrome.commands.onCommand.addListener(async (command) => {
   await analyzeSelectionInTab(tab);
 });
 
-chrome.runtime.onInstalled.addListener(() => {
+// Register context menus (called on install and when service worker starts)
+async function registerContextMenus() {
+  try {
+    // Remove existing menus first to avoid duplicates
+    await chrome.contextMenus.removeAll();
+  } catch (err) {
+    // Ignore errors when removing (e.g., if no menus exist yet)
+  }
+
   const items = [
     {
       id: CONTEXT_MENU_SELECTION_ID,
@@ -1654,11 +1662,28 @@ chrome.runtime.onInstalled.addListener(() => {
   for (const item of items) {
     chrome.contextMenus.create(item, () => {
       if (chrome.runtime.lastError) {
-        console.warn("Context menu creation failed:", chrome.runtime.lastError.message);
+        // Ignore "duplicate id" errors - menu already exists
+        const errorMsg = chrome.runtime.lastError.message.toLowerCase();
+        if (!errorMsg.includes("duplicate") && !errorMsg.includes("already")) {
+          console.warn("Context menu creation failed:", chrome.runtime.lastError.message);
+        }
       }
     });
   }
+}
+
+// Register context menus on install
+chrome.runtime.onInstalled.addListener(() => {
+  console.log("AI Analyze Extension: Installing context menus");
+  registerContextMenus();
 });
+
+// Also register when service worker starts (Manifest V3)
+// Use IIFE to properly handle async initialization
+(async () => {
+  console.log("AI Analyze Extension: Service worker starting, registering context menus");
+  await registerContextMenus();
+})();
 
 chrome.contextMenus.onClicked.addListener(async (info, tab) => {
   const targetTab = tab && tab.id ? tab : await getActiveTab();
