@@ -14,6 +14,61 @@ const SUPPORTED_FILE_MIME_TYPES = [
   "image/heif"
 ];
 
+// Lightweight in-page hotkey to trigger analysis without relying on Chrome's
+// command shortcut registration. Works when the page has focus.
+// Uses Alt+Shift+A on all platforms (Option+Shift+A on macOS).
+const ENABLE_HOTKEY_LOGGING = false; // Feature flag for debugging
+
+(function setupInPageHotkey() {
+  // Guard against duplicate listeners on hot-reload
+  if (window.__aiAnalyzeHotkeyBound) return;
+  window.__aiAnalyzeHotkeyBound = true;
+
+  document.addEventListener("keydown", (e) => {
+    try {
+      // Ignore if modifier involves Meta (Cmd) or Ctrl to reduce conflicts
+      if (!e) return;
+      const isAltShiftA = e.altKey && e.shiftKey && !e.metaKey && !e.ctrlKey && (
+        e.code === "KeyA" || (typeof e.key === "string" && e.key.toLowerCase() === "a")
+      );
+      if (!isAltShiftA) return;
+
+      // Ignore if user is typing in editable fields
+      const target = e.target;
+      if (target && (
+        target.tagName === "INPUT" ||
+        target.tagName === "TEXTAREA" ||
+        target.isContentEditable ||
+        target.closest("[contenteditable='true']")
+      )) {
+        if (ENABLE_HOTKEY_LOGGING) console.log("[AI Analyze] Hotkey ignored: in editable field");
+        return;
+      }
+
+      // Check if there's a selection or selected image
+      const selection = window.getSelection();
+      const hasTextSelection = selection && selection.toString().trim().length > 0;
+      const hasImageSelection = getSelectedImage() !== null;
+
+      if (!hasTextSelection && !hasImageSelection) {
+        if (ENABLE_HOTKEY_LOGGING) console.log("[AI Analyze] Hotkey ignored: no selection");
+        return;
+      }
+
+      // Prevent default to avoid site-level handlers taking over
+      e.preventDefault();
+      e.stopPropagation();
+
+      if (ENABLE_HOTKEY_LOGGING) console.log("[AI Analyze] Hotkey triggered: Alt+Shift+A");
+
+      // Ask background to analyze current selection in this tab
+      chrome.runtime.sendMessage({ type: "TRIGGER_ANALYZE_SELECTION" });
+    } catch (err) {
+      if (ENABLE_HOTKEY_LOGGING) console.error("[AI Analyze] Hotkey error:", err);
+    }
+  }, true);
+})();
+
 function isSupportedFileType(mimeType) {
   if (!mimeType) return false;
   if (mimeType.startsWith("image/")) return true;
@@ -473,12 +528,15 @@ function renderOverlayLoading(rect, type = "text") {
   loadingContent.style.display = "flex";
   loadingContent.style.alignItems = "center";
   loadingContent.style.justifyContent = "center";
+  loadingContent.style.gap = "10px";
   
   const spinner = document.createElement("div");
   spinner.className = "ai-analyze-loading-spinner";
   
   const text = document.createElement("span");
   text.textContent = "Please wait";
+  text.style.color = "rgba(255, 255, 255, 0.8)";
+  text.style.fontSize = "14px";
   
   loadingContent.appendChild(spinner);
   loadingContent.appendChild(text);
@@ -543,11 +601,41 @@ function detectFinalAnswer(content) {
   return null;
 }
 
+function convertExponentsToSuperscript(text) {
+  if (!text) return text;
+  
+  // Check if KaTeX or MathJax is available
+  if (typeof katex !== 'undefined' || typeof MathJax !== 'undefined') {
+    // If math rendering library is available, use it
+    // For now, fall through to regex-based transform
+  }
+  
+  // Regex-based transform: convert patterns like a^2, x^10, a^7.5, b^5.4 to superscripts
+  // Pattern: base^exponent where base is alphanumeric and exponent is a number (integer or decimal)
+  // Avoid matching carets in normal prose by requiring the pattern to be in a mathematical context
+  // Match: letter/number followed by ^ followed by number (with optional decimal), followed by non-alphanumeric or end of string
+  return text.replace(/([A-Za-z0-9]+)\^(\d+(?:\.\d+)?)(?![A-Za-z0-9])/g, '$1<sup>$2</sup>');
+}
+
 function createFinalAnswerDisplay(answerText) {
+  // First, convert mathematical exponents (like x^2) to superscripts
+  // This must happen before stripping ^ characters
+  let processedAnswer = convertExponentsToSuperscript(answerText);
+  
+  // Then strip any remaining ^ delimiter characters that aren't part of mathematical expressions
+  // Since exponents are already converted to <sup> tags, we can safely remove remaining ^
+  // This prevents truncation issues while preserving converted superscripts
+  processedAnswer = processedAnswer
+    .replace(/\^([^\n^<]+)\^/g, '$1') // Remove ^ wrapping (but not if it contains < which indicates HTML)
+    .replace(/^\^+/gm, '') // Remove leading ^ at start of lines
+    .replace(/\^+$/gm, '') // Remove trailing ^ at end of lines
+    .replace(/\^/g, '') // Remove any remaining standalone ^ characters (exponents already converted)
+    .trim();
+  
   return `
     <div class="ai-analyze-final-answer">
       <div class="ai-analyze-final-answer-header">🎯 Final Answer</div>
-      <div class="ai-analyze-final-answer-content">${answerText}</div>
+      <div class="ai-analyze-final-answer-content">${processedAnswer}</div>
     </div>
   `;
 }
@@ -569,6 +657,12 @@ function formatAIResponse(content) {
     // Strip LaTeX inline parens/brackets
     .replace(/\\\(|\\\)|\\\[|\\\]/g, '');
   
+  // Strip ^ delimiter characters that wrap text (e.g., ^Final Answer:^ → Final Answer:)
+  // This prevents ^ characters from cutting off answer text
+  cleanedContent = cleanedContent.replace(/\^([^\n^]+)\^/g, '$1'); // Remove ^ wrapping
+  cleanedContent = cleanedContent.replace(/^\^+/gm, ''); // Remove leading ^ at start of lines
+  cleanedContent = cleanedContent.replace(/\^+$/gm, ''); // Remove trailing ^ at end of lines
+  
   // Check for final answer
   const finalAnswer = detectFinalAnswer(cleanedContent);
   
@@ -576,8 +670,8 @@ function formatAIResponse(content) {
   // Typography: convert simple exponents/subscripts to HTML for readability
   const applyMathTypography = (txt) => {
     let out = txt;
-    // Simple exponents like 3^4, x^2, y^10
-    out = out.replace(/\b([A-Za-z0-9]+)\^(\d{1,3})\b/g, '$1<sup>$2</sup>');
+    // Exponents like 3^4, x^2, y^10, a^7.5, b^5.4 (handles integers and decimals)
+    out = convertExponentsToSuperscript(out);
     // Subscripts like x_1, a_10
     out = out.replace(/\b([A-Za-z])_(\d{1,3})\b/g, '$1<sub>$2</sub>');
     // Chemical style: H2O, CO2 (avoid changing within longer words)
@@ -759,13 +853,131 @@ function updateLastAnalyzed(selection) {
   }
 }
 
+function positionMenu(menu, button, box) {
+  const buttonRect = button.getBoundingClientRect();
+  const boxRect = box.getBoundingClientRect();
+  const menuRect = menu.getBoundingClientRect();
+  const viewportWidth = window.innerWidth;
+  const viewportHeight = window.innerHeight;
+  
+  // Reset positioning
+  menu.style.top = '';
+  menu.style.bottom = '';
+  menu.style.left = '';
+  menu.style.right = '';
+  
+  // Position relative to button (button is in header, header is in box)
+  const header = box.querySelector('.ai-analyze-header');
+  const headerRect = header ? header.getBoundingClientRect() : boxRect;
+  
+  // Calculate position relative to box
+  const buttonOffsetRight = boxRect.right - buttonRect.right;
+  const buttonOffsetTop = buttonRect.top - boxRect.top;
+  
+  // Default: position below button, aligned to right
+  let top = buttonOffsetTop + buttonRect.height + 4;
+  let right = buttonOffsetRight;
+  
+  // Check if menu would overflow bottom of viewport
+  const menuBottom = buttonRect.bottom + menuRect.height + 4;
+  if (menuBottom > viewportHeight) {
+    // Flip to above button
+    top = buttonOffsetTop - menuRect.height - 4;
+    menu.style.bottom = `${boxRect.height - buttonOffsetTop + 4}px`;
+    menu.style.top = 'auto';
+  } else {
+    menu.style.top = `${top}px`;
+    menu.style.bottom = 'auto';
+  }
+  
+  // Check if menu would overflow right edge of viewport
+  const menuRight = buttonRect.right;
+  if (menuRight > viewportWidth - menuRect.width) {
+    // Align to left edge of button instead
+    const buttonOffsetLeft = buttonRect.left - boxRect.left;
+    menu.style.right = 'auto';
+    menu.style.left = `${buttonOffsetLeft}px`;
+  } else {
+    menu.style.right = `${right}px`;
+    menu.style.left = 'auto';
+  }
+}
+
 function addMinimizeMaximizeFunctionality(box, minimizeBtn) {
   let isMinimized = false;
+  let menuVisible = false;
+  let menu = null;
   
-  minimizeBtn.addEventListener('click', (e) => {
-    e.stopPropagation(); // Prevent header click
-    isMinimized = !isMinimized;
+  function createMenu() {
+    if (menu) return menu;
     
+    menu = document.createElement('div');
+    menu.className = 'ai-analyze-menu';
+    menu.style.display = 'none';
+    
+    const menuItems = [
+      { text: 'Minimize', action: () => toggleMinimize() },
+      { text: 'Copy', action: () => copyContent(box) },
+      { text: 'Close', action: () => closeOverlay(box) }
+    ];
+    
+    menuItems.forEach(item => {
+      const menuItem = document.createElement('div');
+      menuItem.className = 'ai-analyze-menu-item';
+      menuItem.textContent = item.text;
+      menuItem.setAttribute('tabindex', '0');
+      menuItem.addEventListener('click', (e) => {
+        e.stopPropagation();
+        item.action();
+        hideMenu();
+      });
+      menuItem.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          e.stopPropagation();
+          item.action();
+          hideMenu();
+        }
+      });
+      menu.appendChild(menuItem);
+    });
+    
+    box.appendChild(menu);
+    return menu;
+  }
+  
+  function showMenu() {
+    if (!menu) menu = createMenu();
+    menu.style.display = 'block';
+    menuVisible = true;
+    
+    // Position menu relative to button (need to measure after display)
+    requestAnimationFrame(() => {
+      positionMenu(menu, minimizeBtn, box);
+    });
+    
+    // Close menu when clicking outside
+    setTimeout(() => {
+      document.addEventListener('click', hideMenuOnOutsideClick, true);
+    }, 0);
+  }
+  
+  function hideMenu() {
+    if (menu) {
+      menu.style.display = 'none';
+      menuVisible = false;
+    }
+    document.removeEventListener('click', hideMenuOnOutsideClick, true);
+  }
+  
+  function hideMenuOnOutsideClick(e) {
+    if (menu && !menu.contains(e.target) && !minimizeBtn.contains(e.target)) {
+      hideMenu();
+    }
+  }
+  
+  function toggleMinimize() {
+    isMinimized = !isMinimized;
     if (isMinimized) {
       box.classList.add('minimized');
       minimizeBtn.innerHTML = "▲";
@@ -775,23 +987,39 @@ function addMinimizeMaximizeFunctionality(box, minimizeBtn) {
       minimizeBtn.innerHTML = "▼";
       minimizeBtn.title = "Minimize";
     }
+  }
+  
+  function copyContent(box) {
+    const body = box.querySelector('.ai-analyze-body');
+    if (body) {
+      const text = body.textContent || body.innerText;
+      navigator.clipboard.writeText(text).catch(() => {});
+    }
+  }
+  
+  function closeOverlay(box) {
+    const container = box.closest('#ai-analyze-overlay');
+    if (container) {
+      isAnalysisInProgress = false;
+      container.remove();
+    }
+  }
+  
+  minimizeBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (menuVisible) {
+      hideMenu();
+    } else {
+      showMenu();
+    }
   });
   
-  // Also allow clicking the header to toggle
+  // Also allow clicking the header to toggle minimize
   const header = box.querySelector('.ai-analyze-header');
   if (header) {
-    header.addEventListener('click', () => {
-      isMinimized = !isMinimized;
-      
-      if (isMinimized) {
-        box.classList.add('minimized');
-        minimizeBtn.innerHTML = "▲";
-        minimizeBtn.title = "Maximize";
-      } else {
-        box.classList.remove('minimized');
-        minimizeBtn.innerHTML = "▼";
-        minimizeBtn.title = "Minimize";
-      }
+    header.addEventListener('click', (e) => {
+      if (e.target === minimizeBtn || minimizeBtn.contains(e.target)) return;
+      toggleMinimize();
     });
   }
 }

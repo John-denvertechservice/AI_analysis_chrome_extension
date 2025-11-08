@@ -48,8 +48,28 @@ A powerful Chrome extension that provides AI-powered analysis of selected text a
 6. Save your settings
 
 ### Keyboard Shortcut
-- **Default**: Alt+Shift+A (Windows/Linux) or Cmd+Shift+A (Mac)
+- **Default**: Alt+Shift+A (Windows/Linux) or Option+Shift+A (Mac)
 - **Customizable**: Go to `chrome://extensions/shortcuts` to change
+
+## Troubleshooting
+
+### Troubleshooting Hotkeys
+
+If the Alt+Shift+A (Option+Shift+A on macOS) hotkey doesn't work:
+
+1. **Check Chrome's command registration**: Chrome's command shortcuts can conflict or may not auto-register. You can verify or set the shortcut manually at `chrome://extensions/shortcuts`.
+
+2. **In-page fallback**: The extension includes an in-page hotkey fallback that works when the page is focused. This fallback:
+   - Works independently of Chrome's command registration
+   - Only triggers when text or an image is selected
+   - Ignores keypresses when typing in input fields, textareas, or contenteditable elements
+   - Requires the page to have focus (click on the page first if needed)
+
+3. **If the hotkey still doesn't work**:
+   - Ensure you have text or an image selected
+   - Make sure the page has focus (click on the page content)
+   - Try clicking on the page and then pressing the hotkey again
+   - Check that you're not typing in an input field or textarea
 
 ## Supported Content Types
 

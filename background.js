@@ -541,20 +541,20 @@ Normalized Equation: <equation using only numbers, x, +, -, *, /, ^, (), sqrt()>
 Example: sqrt(4 - x) = -2 + sqrt(5 - 2x)
 
 STRUCTURE:
-• Problem: Restate clearly
-• Solution Steps: Show work with explanations
+• Restate the equation clearly
+• Show work with explanations
 • Final Answer: Result only (no instructions)
 • Verification: Check answer if applicable
 
 CRITICAL RULES:
 - Strict ASCII math only: use +, -, *, /, ^, (, ), sqrt(), pi, abs(). NEVER use ×, ÷, √, superscripts, Unicode symbols, or LaTeX.
 - Every radicand and denominator must be fully parenthesized. Write sqrt((x^2)+9) NOT sqrt(x^2)+9.
-- Restate the original equation unambiguously before solving.
+- Restate the original equation unambiguously.
 - When radicals appear in equations, isolate: sqrt(A) - sqrt(B) = k, then square. Check each candidate in the ORIGINAL equation and discard extraneous roots.
 - Honor domain constraints (even roots ≥ 0, denominators ≠ 0, logs > 0). Express intervals with parentheses/brackets and unions with U.
 - Final Answer: Match TI-84 output. Provide numeric results (or requested rounding) in the form x=..., x1=..., x2=..., etc.`;
     
-    userPrompt = `Solve this math problem step by step. Start with the required Normalized Equation line.\n\n${selectedText}`;
+    userPrompt = `${selectedText}`;
   } else {
     systemPrompt = nonMathPrompts.systemPrompt;
     userPrompt = nonMathPrompts.userPrompt;
@@ -715,7 +715,7 @@ async function fetchClaudeImageAnalysis(apiKey, model, imageData, conversationHi
      * Fill-in-the-blank (_____): Final Answer with the most likely fill only.
      * Question (math or otherwise): Include a brief Final Answer field with the answer.
      * Commands (answer/calculate/evaluate/graph/select...): Execute and include Final Answer. Graphs must be ASCII/table.
-     * Math problems: Restate clearly, solve completely, include Final Answer. TOP LINE: Normalized Equation: <ascii with sqrt()>.
+     * Math problems: Restate clearly, include Final Answer. TOP LINE: Normalized Equation: <ascii with sqrt()>.
      * Code snippets: State "Language: <name>", summarize purpose, offer clarification. No Final Answer.
      * Statements: Summary ≤15 words, ask how the user wants to proceed. No Final Answer.
 
@@ -742,7 +742,7 @@ CRITICAL - FORMATTING RULES (ALWAYS APPLY):
     content: [
       {
         type: "text",
-        text: `Please analyze this image${imageData.name ? ` (${imageData.name})` : ""}. If it contains a mathematical problem or formula, restate it unambiguously and solve it step-by-step with a Final Answer. Otherwise, follow the word-analysis rules.`
+        text: `Please analyze this image${imageData.name ? ` (${imageData.name})` : ""}. If it contains a mathematical problem or formula, restate it unambiguously and provide step-by-step work with a Final Answer. Otherwise, follow the word-analysis rules.`
       },
       {
         type: "image",
@@ -808,8 +808,7 @@ Guidelines:
 
 FOLLOW-UP DECISION RULES:
 ${followUpIsMath
-  ? `- Treat this as a math follow-up. Restate the math problem clearly.
-- Provide step-by-step work, starting with "Normalized Equation: <ascii expression>".
+  ? `- Provide step-by-step work, starting with "Normalized Equation: <ascii expression>".
 - Include a "Final Answer" section with the computed result only.`
   : `- Do NOT include a "Final Answer" section.
 - Provide the clarification or additional detail conversationally.`}
@@ -887,20 +886,20 @@ Normalized Equation: <equation using only numbers, x, +, -, *, /, ^, (), sqrt()>
 Example: sqrt(4 - x) = -2 + sqrt(5 - 2x)
 
 STRUCTURE:
-• **Problem**: Restate clearly
-• **Solution Steps**: Show work with explanations
-• **Final Answer**: Result only (no instructions)
-• **Verification**: Check answer if applicable
+• Restate the equation clearly
+• Show work with explanations
+• Final Answer: Result only (no instructions)
+• Verification: Check answer if applicable
 
 CRITICAL RULES:
 - Strict ASCII math only: use +, -, *, /, ^, (, ), sqrt(), pi, abs(). NEVER use ×, ÷, √, superscripts, Unicode symbols, or LaTeX.
 - Every radicand and denominator must be fully parenthesized. Write sqrt((x^2)+9) NOT sqrt(x^2)+9.
-- Restate the original equation unambiguously before solving.
+- Restate the original equation unambiguously.
 - When radicals appear in equations, isolate: sqrt(A) - sqrt(B) = k, then square. Check each candidate in the ORIGINAL equation and discard extraneous roots.
 - Honor domain constraints (even roots ≥ 0, denominators ≠ 0, logs > 0). Express intervals with parentheses/brackets and unions with U.
 - Final Answer: Match TI-84 output. Provide numeric results (or requested rounding) in the form x=..., x1=..., x2=..., etc.`;
     
-    userPrompt = `Solve this math problem step by step. Start with the required Normalized Equation line.\n\n${selectedText}`;
+    userPrompt = `${selectedText}`;
   } else {
     systemPrompt = nonMathPrompts.systemPrompt;
     userPrompt = nonMathPrompts.userPrompt;
@@ -1322,7 +1321,7 @@ async function fetchOpenAIImageAnalysis(apiKey, model, imageData, conversationHi
      * Fill-in-the-blank (_____): Final Answer with the most likely fill only.
      * Question (math or otherwise): Include a brief Final Answer field with the answer.
      * Commands (answer/calculate/evaluate/graph/select...): Execute and include Final Answer. Graphs must be ASCII/table.
-     * Math problems: Restate clearly, solve completely, include Final Answer. TOP LINE: Normalized Equation: <ascii with sqrt()>.
+     * Math problems: Restate clearly, include Final Answer. TOP LINE: Normalized Equation: <ascii with sqrt()>.
      * Code snippets: State "Language: <name>", summarize purpose, offer clarification. No Final Answer.
      * Statements: Summary ≤15 words, ask how the user wants to proceed. No Final Answer.
 
@@ -1354,7 +1353,7 @@ CRITICAL - FORMATTING RULES (ALWAYS APPLY):
     content: [
       {
         type: "text",
-        text: `Please analyze this image${imageData.name ? ` (${imageData.name})` : ""}. If it contains a mathematical problem or formula, restate it unambiguously and solve it step-by-step with a Final Answer. Otherwise, follow the word-analysis rules.`
+        text: `Please analyze this image${imageData.name ? ` (${imageData.name})` : ""}. If it contains a mathematical problem or formula, restate it unambiguously and provide step-by-step work with a Final Answer. Otherwise, follow the word-analysis rules.`
       },
       {
         type: "image_url",
@@ -1412,8 +1411,7 @@ Guidelines:
 
 FOLLOW-UP DECISION RULES:
 ${followUpIsMath
-  ? `- Treat this as a math follow-up. Restate the math problem clearly.
-- Provide step-by-step work, starting with "Normalized Equation: <ascii expression>".
+  ? `- Provide step-by-step work, starting with "Normalized Equation: <ascii expression>".
 - Include a "Final Answer" section with the computed result only.`
   : `- Do NOT include a "Final Answer" section.
 - Provide the clarification or additional detail conversationally.`}
@@ -1628,13 +1626,30 @@ async function analyzeImageFromContext(tab, srcUrl) {
   }
 }
 
+const ENABLE_HOTKEY_LOGGING = false; // Feature flag for debugging
+
 chrome.commands.onCommand.addListener(async (command) => {
   if (command !== "analyze-selection") return;
+  
+  if (ENABLE_HOTKEY_LOGGING) console.log("[AI Analyze] chrome.commands.onCommand triggered");
 
   const tab = await getActiveTab();
   if (!tab || !tab.id) return;
 
   await analyzeSelectionInTab(tab);
+});
+
+// Allow content script to trigger analysis via in-page hotkey
+chrome.runtime.onMessage.addListener((message, _sender, _sendResponse) => {
+  if (message && message.type === "TRIGGER_ANALYZE_SELECTION") {
+    if (ENABLE_HOTKEY_LOGGING) console.log("[AI Analyze] TRIGGER_ANALYZE_SELECTION received");
+    (async () => {
+      const tab = await getActiveTab();
+      if (!tab || !tab.id) return;
+      await analyzeSelectionInTab(tab);
+    })();
+    return; // Fire-and-forget
+  }
 });
 
 // Register context menus (called on install and when service worker starts)
